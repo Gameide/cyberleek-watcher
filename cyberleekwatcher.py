@@ -3,6 +3,7 @@ import sys
 import subprocess
 import json
 
+
 def check_dependencies():
     required_packages = ["requests", "solders"]
     missing_packages = []
@@ -27,12 +28,15 @@ def check_dependencies():
 
 check_dependencies()
 
+
 SETTINGS_FILE = "settings.json"
 
 def load_settings():
     default_settings = {
         "telegram_token": "YOUR_BOT_TOKEN_HERE",
-        "telegram_chat_id": "YOUR_CHAT_ID_HERE"
+        "telegram_chat_id": "YOUR_CHAT_ID_HERE",
+        "auto_open_browser": True,
+        "play_audio_alert": True
     }
     
     if not os.path.exists(SETTINGS_FILE):
@@ -53,6 +57,12 @@ def load_settings():
             print(f"⚠️ Please configure your 'telegram_token' and 'telegram_chat_id' inside '{SETTINGS_FILE}'.")
             sys.exit(0)
             
+
+        if "auto_open_browser" not in cfg:
+            cfg["auto_open_browser"] = True
+        if "play_audio_alert" not in cfg:
+            cfg["play_audio_alert"] = True
+            
         return cfg
     except Exception as e:
         print(f"❌ Error loading '{SETTINGS_FILE}': {e}")
@@ -61,6 +71,8 @@ def load_settings():
 settings = load_settings()
 TELEGRAM_TOKEN = settings["telegram_token"]
 TELEGRAM_CHAT_ID = str(settings["telegram_chat_id"])
+AUTO_OPEN_BROWSER = settings["auto_open_browser"]
+PLAY_AUDIO_ALERT = settings["play_audio_alert"]
 
 import time
 import struct
@@ -68,6 +80,7 @@ import base64
 from datetime import datetime
 import requests
 from solders.pubkey import Pubkey
+import webbrowser
 
 
 SCAN_INTERVAL = 2.5
@@ -77,7 +90,6 @@ RPC_URL = "https://api.mainnet-beta.solana.com"
 CURRENT_VERSION = "1.0.0"
 VERSION_URL = "https://raw.githubusercontent.com/Gameide/cyberleek-watcher/refs/heads/main/version.txt"
 GITHUB_REPO_URL = "https://github.com/Gameide/cyberleek-watcher/tree/main"
-
 
 ANCHOR = "7rAgHPLDc9NryZmNdeEzyDui6D9PHkvTxMjKhNSa7w3a"
 MINT = "ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg"
@@ -183,7 +195,6 @@ class CyberleekMonitor:
         self.active_polls = {} 
         self.is_first_run = True
         
-        # Dashboard Variables
         self.start_time = datetime.now()
         self.scans = 0
         self.last_change = "None"
@@ -260,17 +271,20 @@ class CyberleekMonitor:
         ata, _ = Pubkey.find_program_address([bytes(option_pda), bytes(TOKEN_PROGRAM), bytes(_mint)], ATA_PROGRAM)
         return str(ata)
 
-    def download_and_send_file(self, url, label):
+    def download_and_send_file(self, url, label, title):
         filename = label.replace(" ", "_")
         if not filename or "." not in filename:
             filename += ".mp4"
             
         self.log_print(f"{C.MAGENTA}Sending text alert to Telegram...{C.RESET}")
-        msg_text = f"🚨 <b>NEW ON-CHAIN LEEK!</b>\n\n📁 <b>Section:</b> LEEKS\n🎬 <b>File:</b> {filename}"
+
+        msg_text = f"🚨 <b>NEW ON-CHAIN LEEK!</b>\n\n📌 <b>Title:</b> {title}\n📁 <b>Section:</b> LEEKS\n🎬 <b>File:</b> {filename}"
+
+        
         reply_markup = {"inline_keyboard": [[{"text": "🔗 Open Mirror", "url": url}]]}
         self.tg.send_message(msg_text, reply_markup)
         
-        if any(h in url.lower() for h in ["arweave.net", "temp.sh", "upload.ee"]):
+        if any(h in url.lower() for h in ["arweave.net", "temp.sh"]):
             self.log_print(f"{C.YELLOW}⏳ Attempting to download: {url}{C.RESET}")
             try:
                 head = requests.head(url, timeout=20, allow_redirects=True)
@@ -351,8 +365,25 @@ class CyberleekMonitor:
                         self.last_change = datetime.now().strftime("%H:%M:%S")
                         self.log_print(f"{C.GREEN}🚀 NEW LEEK DETECTED: {title}{C.RESET}")
                         
+                        # --- AUDIO ALERTS ---
+                        if PLAY_AUDIO_ALERT:
+                            try:
+                                import winsound
+                                winsound.Beep(1400, 300)
+                                winsound.Beep(1800, 500)
+                                winsound.Beep(2200, 700)
+                            except Exception:
+                                pass
+                        
                         for item in items:
-                            self.download_and_send_file(item['url'], item['label'])
+                            if AUTO_OPEN_BROWSER:
+                                try:
+                                    webbrowser.open(item['url'])
+                                    self.log_print(f"{C.CYAN}🌐 Browser opened for link: {item['url'][:30]}...{C.RESET}")
+                                except Exception as e:
+                                    self.log_print(f"{C.RED}❌ Error opening browser: {e}{C.RESET}")
+                            
+                            self.download_and_send_file(item['url'], item['label'], title)
                             
                     self.known_leaks.add(timestamp)
             except Exception:
