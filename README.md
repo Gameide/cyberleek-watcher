@@ -15,6 +15,8 @@ Credits to: Gemini (Yes, Gemini did build all this alone)
 * **Live Poll Dashboard:** Displays live voting tallies and dynamically edits the Telegram message as new votes arrive.
 * **Built-in Terminal Dashboard:** Color-coded CLI interface displaying real-time uptime, scan count, RPC status, and activity logs.
 * **Update Notification System:** Checks GitHub periodically for new script versions and alerts the user when an update is available.
+* **Local Alerts:** Automatically opens new leaks in your default web browser and plays system audio alerts. (Settings file)
+* **Plug & Play:** Automatically installs required dependencies on the first run.
 
 ---
 
