@@ -87,7 +87,7 @@ SCAN_INTERVAL = 2.5
 RPC_URL = "https://api.mainnet-beta.solana.com"
 
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "2.0.0"
 VERSION_URL = "https://raw.githubusercontent.com/Gameide/cyberleek-watcher/refs/heads/main/version.txt"
 GITHUB_REPO_URL = "https://github.com/Gameide/cyberleek-watcher/tree/main"
 
