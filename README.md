@@ -3,7 +3,7 @@
 A lightweight, high-performance monitoring tool that interacts directly with the **Solana Mainnet RPC**. It tracks new Cyberleek content releases and monitors live on-chain voting polls in real time without relying on web scrapers or third-party frontends.
 
 ---
-Based on https://github.com/FermataRest/cyberleek-leak-research (Solana Feature)
+Based on https://github.com/ZeroHackz/cyberleek-viewer (Solana Feature)
 
 Credits to: Gemini (Yes, Gemini did build all this alone)
 
