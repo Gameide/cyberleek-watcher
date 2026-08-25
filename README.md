@@ -7,6 +7,7 @@ Based on https://github.com/ZeroHackz/cyberleek-viewer (Solana Feature)
 
 Credits to: Gemini (Yes, Gemini did build all this alone)
 
+
 ## 🚀 Key Features
 
 * **Direct Solana RPC Integration:** Queries on-chain program accounts directly (`getProgramAccounts`) with zero website or browser dependency.
@@ -17,6 +18,9 @@ Credits to: Gemini (Yes, Gemini did build all this alone)
 * **Update Notification System:** Checks GitHub periodically for new script versions and alerts the user when an update is available.
 * **Local Alerts:** Automatically opens new leaks in your default web browser and plays system audio alerts. (Settings file)
 * **Plug & Play:** Automatically installs required dependencies on the first run.
+
+<img width="1481" height="760" alt="image" src="https://github.com/user-attachments/assets/e762568f-f13a-4487-86cd-480dcf9b7d50" />
+
 
 ---
 
