@@ -31,6 +31,8 @@ from solders.pubkey import Pubkey
 import websockets
 
 SETTINGS_FILE = "settings.json"
+SCRIPT_URL = "https://raw.githubusercontent.com/Gameide/cyberleek-watcher/refs/heads/main/cyberleekwatcher.py"
+VERSION_URL = "https://raw.githubusercontent.com/Gameide/cyberleek-watcher/refs/heads/main/version.txt"
 
 def load_settings():
     defaults = {
@@ -38,8 +40,9 @@ def load_settings():
         "telegram_chat_id": "YOUR_CHAT_ID_HERE",
         "auto_open_browser": True,
         "play_audio_alert": True,
-        "rpc_url": "https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY",
-        "rpc_ws_url": "wss://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY"
+        "auto_update": False,
+        "rpc_url": "https://api.mainnet-beta.solana.com",
+        "rpc_ws_url": "wss://api.mainnet-beta.solana.com"
     }
     if not os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -53,6 +56,7 @@ def load_settings():
         sys.exit(0)
     cfg.setdefault("auto_open_browser", True)
     cfg.setdefault("play_audio_alert", True)
+    cfg.setdefault("auto_update", False)
     cfg.setdefault("rpc_url", "https://api.mainnet-beta.solana.com")
     cfg.setdefault("rpc_ws_url", "wss://api.mainnet-beta.solana.com")
     return cfg
@@ -62,12 +66,11 @@ TELEGRAM_TOKEN = settings["telegram_token"]
 TELEGRAM_CHAT_ID = str(settings["telegram_chat_id"])
 AUTO_OPEN_BROWSER = settings["auto_open_browser"]
 PLAY_AUDIO_ALERT = settings["play_audio_alert"]
+AUTO_UPDATE = settings["auto_update"]
 RPC_URL = settings["rpc_url"]
 RPC_WS_URL = settings["rpc_ws_url"]
 
-CURRENT_VERSION = "3.2.0"
-VERSION_URL = "https://raw.githubusercontent.com/Gameide/cyberleek-watcher/refs/heads/main/version.txt"
-GITHUB_REPO_URL = "https://github.com/Gameide/cyberleek-watcher"
+CURRENT_VERSION = "3.3.0"
 
 ANCHOR = "7rAgHPLDc9NryZmNdeEzyDui6D9PHkvTxMjKhNSa7w3a"
 MINT = "ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg"
@@ -143,18 +146,15 @@ class TelegramBot:
         except Exception:
             pass
 
-    def answer_callback(self, callback_id, text=None):
-        payload = {"callback_query_id": callback_id}
-        if text:
-            payload["text"] = text
+    def answer_callback(self, callback_id):
         try:
-            self.session.post(f"{self.base}/answerCallbackQuery", json=payload, timeout=10)
+            self.session.post(f"{self.base}/answerCallbackQuery", json={"callback_query_id": callback_id}, timeout=10)
         except Exception:
             pass
 
     def get_updates(self):
         try:
-            r = self.session.get(f"{self.base}/getUpdates", params={"offset": self.offset, "timeout": 20}, timeout=25)
+            r = self.session.get(f"{self.base}/getUpdates", params={"offset": self.offset, "timeout": 15}, timeout=20)
             data = r.json()
             if data.get("ok"):
                 return data["result"]
@@ -193,7 +193,8 @@ class CyberleekMonitor:
         self.latest_poll = None
         self.running = True
         self.ws_connected = False
-        self.menu_message_id = None
+        self.update_notified = False
+        self.pending_update = False
 
     def log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -217,6 +218,62 @@ class CyberleekMonitor:
             print(f"\n{C.WHITE}{C.BOLD}--- ACTIVITY LOG ---{C.RESET}")
             for l in self.logs:
                 print(l)
+
+    def do_update(self):
+        try:
+            self.log(f"{C.CYAN}Downloading update...{C.RESET}")
+            r = self.http.get(SCRIPT_URL, timeout=20)
+            if r.status_code == 200 and len(r.content) > 1000:
+                with open(__file__, "wb") as f:
+                    f.write(r.content)
+                self.log(f"{C.GREEN}Update applied. Restarting...{C.RESET}")
+                self.tg.send_message("✅ <b>Update applied.</b> Restarting script...")
+                time.sleep(1)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                self.log(f"{C.RED}Update download failed{C.RESET}")
+        except Exception as e:
+            self.log(f"{C.RED}Update error: {e}{C.RESET}")
+
+    def check_for_updates(self):
+        if self.update_notified:
+            return
+        try:
+            r = self.http.get(VERSION_URL, timeout=8)
+            if r.status_code == 200:
+                remote = r.text.strip()
+                if remote and remote != CURRENT_VERSION:
+                    self.update_notified = True
+                    if AUTO_UPDATE:
+                        self.log(f"{C.YELLOW}New version {remote} found. Auto-updating...{C.RESET}")
+                        self.executor.submit(self.do_update)
+                    else:
+                        self.log(f"{C.YELLOW}New version {remote} available{C.RESET}")
+                        markup = {"inline_keyboard": [[{"text": "✅ Yes, update now", "callback_data": "do_update"}]]}
+                        self.tg.send_message(
+                            f"⚠️ <b>New version available</b>\n\nCurrent: v{CURRENT_VERSION}\nNew: v{remote}\n\nDo you want to update now?",
+                            markup
+                        )
+                        self.pending_update = True
+        except Exception:
+            pass
+
+    def telegram_listener(self):
+        while self.running:
+            if not self.pending_update:
+                time.sleep(2)
+                continue
+            updates = self.tg.get_updates()
+            for upd in updates:
+                self.tg.offset = upd["update_id"] + 1
+                if "callback_query" in upd:
+                    cq = upd["callback_query"]
+                    if str(cq["message"]["chat"]["id"]) == TELEGRAM_CHAT_ID and cq.get("data") == "do_update":
+                        self.tg.answer_callback(cq["id"])
+                        self.tg.edit_message(cq["message"]["message_id"], "✅ Updating...")
+                        self.executor.submit(self.do_update)
+                        self.pending_update = False
+            time.sleep(1)
 
     def rpc(self, method, params, timeout=15):
         try:
@@ -248,22 +305,6 @@ class CyberleekMonitor:
             ata, _ = Pubkey.find_program_address([bytes(opt), bytes(TOKEN_PROGRAM), bytes(_mint)], ATA_PROGRAM)
             self.ata_cache[key] = str(ata)
         return self.ata_cache[key]
-
-    def main_menu_markup(self):
-        return {
-            "inline_keyboard": [
-                [{"text": "🔥 Latest Leek", "callback_data": "latest_leek"}],
-                [{"text": "📊 Active Polls", "callback_data": "polls"}],
-                [{"text": "📈 Status", "callback_data": "status"}],
-                [{"text": "🔄 Refresh", "callback_data": "refresh"}]
-            ]
-        }
-
-    def send_main_menu(self):
-        text = "🟢 <b>Cyberleek Monitor</b>\n\nChoose an option:"
-        mid = self.tg.send_message(text, self.main_menu_markup())
-        if mid:
-            self.menu_message_id = mid
 
     def format_poll(self, title, choices, bals, total, ends):
         live = datetime.now().timestamp() < ends
@@ -374,54 +415,6 @@ class CyberleekMonitor:
             except Exception:
                 pass
 
-    def handle_callback(self, data, callback_id, message_id):
-        self.tg.answer_callback(callback_id)
-        if data == "latest_leek":
-            if self.latest_leek:
-                leek = self.latest_leek
-                text = f"🔥 <b>Latest Leek</b>\n\n📌 {leek['title']}\n🕒 {datetime.fromtimestamp(leek['timestamp']).strftime('%Y-%m-%d %H:%M:%S')}\n"
-                kb = [[{"text": f"🔗 {it['label'][:30]}", "url": it["url"]}] for it in leek.get("items", [])[:6]]
-                kb.append([{"text": "« Back", "callback_data": "menu"}])
-                self.tg.edit_message(message_id, text, {"inline_keyboard": kb})
-            else:
-                self.tg.edit_message(message_id, "No leaks yet.", {"inline_keyboard": [[{"text": "« Back", "callback_data": "menu"}]]})
-        elif data == "polls":
-            if self.polls:
-                text = "📊 <b>Active Polls</b>\n\n"
-                kb = []
-                for p in self.polls[:5]:
-                    live = datetime.now().timestamp() < p["ends_at"]
-                    status = "🟢" if live else "🔴"
-                    text += f"{status} {p['title'][:40]}\n"
-                    kb.append([{"text": f"{status} {p['title'][:25]}", "callback_data": f"poll_{p['pubkey'][:8]}"}])
-                kb.append([{"text": "« Back", "callback_data": "menu"}])
-                self.tg.edit_message(message_id, text, {"inline_keyboard": kb})
-            else:
-                self.tg.edit_message(message_id, "No active polls.", {"inline_keyboard": [[{"text": "« Back", "callback_data": "menu"}]]})
-        elif data.startswith("poll_"):
-            short = data[5:]
-            p = next((x for x in self.polls if x["pubkey"].startswith(short)), None)
-            if p:
-                text = self.format_poll(p["title"], p["choices"], p["balances"], p["total"], p["ends_at"])
-                self.tg.edit_message(message_id, text, {"inline_keyboard": [[{"text": "« Back", "callback_data": "polls"}]]})
-        elif data == "status":
-            uptime = str(datetime.now() - self.start_time).split('.')[0]
-            text = f"📈 <b>Status</b>\n\nUptime: {uptime}\nScans: {self.scans}\nWS: {'Connected' if self.ws_connected else 'Disconnected'}\nLeaks tracked: {len(self.leaks)}\nPolls: {len(self.polls)}\nLast change: {self.last_change}"
-            self.tg.edit_message(message_id, text, {"inline_keyboard": [[{"text": "« Back", "callback_data": "menu"}]]})
-        elif data in ("menu", "refresh"):
-            self.tg.edit_message(message_id, "🟢 <b>Cyberleek Monitor</b>\n\nChoose an option:", self.main_menu_markup())
-
-    def telegram_listener(self):
-        while self.running:
-            updates = self.tg.get_updates()
-            for upd in updates:
-                self.tg.offset = upd["update_id"] + 1
-                if "callback_query" in upd:
-                    cq = upd["callback_query"]
-                    if str(cq["message"]["chat"]["id"]) == TELEGRAM_CHAT_ID:
-                        self.handle_callback(cq["data"], cq["id"], cq["message"]["message_id"])
-            time.sleep(0.5)
-
     async def ws_loop(self):
         filters_c = [{"memcmp": {"offset": 0, "bytes": CONTENT_DISCRIMINATOR}}]
         filters_p = [{"memcmp": {"offset": 0, "bytes": POLL_DISCRIMINATOR}}]
@@ -467,13 +460,14 @@ class CyberleekMonitor:
 
     def run(self):
         self.bootstrap()
-        self.send_main_menu()
         threading.Thread(target=self.telegram_listener, daemon=True).start()
         def start_ws():
             asyncio.run(self.ws_loop())
         threading.Thread(target=start_ws, daemon=True).start()
         while self.running:
             self.draw_dashboard()
+            if self.scans % 30 == 0:
+                self.executor.submit(self.check_for_updates)
             if self.scans % 20 == 0 and not self.ws_connected:
                 self.executor.submit(self.bootstrap)
             time.sleep(2)
