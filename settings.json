@@ -1,0 +1,8 @@
+{
+    "telegram_token": "YOUR_BOT_TOKEN_HERE",
+    "telegram_chat_id": "YOUR_CHAT_ID_HERE",
+    "auto_open_browser": true,
+    "play_audio_alert": true,
+    "rpc_url": "https://api.mainnet-beta.solana.com",
+    "rpc_ws_url": "wss://api.mainnet-beta.solana.com"
+}
