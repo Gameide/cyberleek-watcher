@@ -70,7 +70,7 @@ AUTO_UPDATE = settings["auto_update"]
 RPC_URL = settings["rpc_url"]
 RPC_WS_URL = settings["rpc_ws_url"]
 
-CURRENT_VERSION = "3.3.1"
+CURRENT_VERSION = "3.3.2"
 
 ANCHOR = "7rAgHPLDc9NryZmNdeEzyDui6D9PHkvTxMjKhNSa7w3a"
 MINT = "ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg"
@@ -249,16 +249,28 @@ class CyberleekMonitor:
                 json.dump(current, f, indent=4)
             self.log(f"{C.GREEN}Update applied. Restarting...{C.RESET}")
             self.tg.send_message("✅ <b>Update applied.</b> Restarting script...")
-            time.sleep(1.5)
+            time.sleep(1.2)
             script_path = os.path.abspath(__file__)
+            cwd = os.path.dirname(script_path)
             if os.name == "nt":
+                bat = os.path.join(cwd, "_restart_cyberleek.bat")
+                with open(bat, "w", encoding="utf-8") as bf:
+                    bf.write('@echo off\n')
+                    bf.write('timeout /t 2 /nobreak >nul\n')
+                    bf.write(f'start "" "{sys.executable}" "{script_path}"\n')
+                    bf.write('del "%~f0"\n')
                 subprocess.Popen(
-                    [sys.executable, script_path],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE
+                    ["cmd", "/c", "start", "", bat],
+                    cwd=cwd,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS
                 )
             else:
-                subprocess.Popen([sys.executable, script_path], start_new_session=True)
-            time.sleep(0.5)
+                subprocess.Popen(
+                    [sys.executable, script_path],
+                    cwd=cwd,
+                    start_new_session=True
+                )
+            time.sleep(0.8)
             os._exit(0)
         except Exception as e:
             self.log(f"{C.RED}Update error: {e}{C.RESET}")
